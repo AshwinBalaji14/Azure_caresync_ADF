@@ -5,11 +5,17 @@
 		"factoryName": {
 			"value": "adf-caresync14"
 		},
+		"AzureDatabricks1_accessToken": {
+			"value": ""
+		},
 		"PostgreSql1_password": {
 			"value": ""
 		},
 		"AzureDataLakeStorage1_properties_typeProperties_url": {
 			"value": "https://caresyncstorage14.dfs.core.windows.net/"
+		},
+		"AzureDatabricks1_properties_typeProperties_existingClusterId": {
+			"value": "1003-143331-rm5j7o2j"
 		},
 		"AzureKeyVault1_properties_typeProperties_baseUrl": {
 			"value": "https://caresynckeyvalult14.vault.azure.net/"
