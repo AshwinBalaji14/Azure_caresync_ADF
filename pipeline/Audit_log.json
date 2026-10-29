@@ -1,0 +1,111 @@
+{
+	"name": "Audit_log",
+	"properties": {
+		"activities": [
+			{
+				"name": "ingest from source to silver",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "insert in progress status",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "PL_SOURCE_TO_SILVER_INNER",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"table_id": {
+							"value": "@pipeline().parameters.table_id",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "insert in progress status",
+				"type": "Script",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 4,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "LS_AzureSqlDatabase1",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "INSERT into ctrl.audit_log (adf_run_id, table_id, stage, status,\nstart_time)\nVALUES('a1',@{pipeline().parameters.table_id},'SOURCE_TO_SILVER','IN_PROGRESS',SYSUTCDATETIME())|",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			},
+			{
+				"name": "update failed status",
+				"type": "Script",
+				"dependsOn": [
+					{
+						"activity": "ingest from source to silver",
+						"dependencyConditions": [
+							"Failed"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "LS_AzureSqlDatabase1",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "update ctrl.audit_log\nset status='FAILED', end_time=SYSUTCDATETIME()\nwhere adf_run_id='@{pipeline().parameters.adf_run_id}' and\ntable_id=@{pipeline().parameters.table_id}",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			}
+		],
+		"parameters": {
+			"table_id": {
+				"type": "string",
+				"defaultValue": "1"
+			},
+			"adf_run_id": {
+				"type": "string"
+			}
+		},
+		"annotations": []
+	}
+}
