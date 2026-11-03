@@ -233,13 +233,7 @@
 						"type": "Copy",
 						"dependsOn": [
 							{
-								"activity": "Read table details",
-								"dependencyConditions": [
-									"Succeeded"
-								]
-							},
-							{
-								"activity": "set start time",
+								"activity": "check load type",
 								"dependencyConditions": [
 									"Succeeded"
 								]
@@ -257,7 +251,7 @@
 							"source": {
 								"type": "PostgreSqlV2Source",
 								"query": {
-									"value": "select * from PUBLIC.@{activity('Read table details').output.firstRow.source_table_name}",
+									"value": "@concat(\n    'SELECT * FROM PUBLIC.',\n    activity('Read table details').output.firstRow.source_table_name,\n    if(\n        equals(activity('Read table details').output.firstRow.load_type, 'FULL'),\n        '',\n        concat(\n            ' WHERE ',\n            activity('Read table details').output.firstRow.watermark_column,\n            ' > ',\n            '''',\n            variables('watermark_value'),\n            ''''\n        )\n    )\n) ",
 									"type": "Expression"
 								},
 								"queryTimeout": "02:00:00"
@@ -372,6 +366,14 @@
 								"landing_timestamp": {
 									"value": "@variables('create_time')",
 									"type": "Expression"
+								},
+								"merge_keys": {
+									"value": "@coalesce(activity('Read table details').output.firstRow.merge_keys,'')",
+									"type": "Expression"
+								},
+								"load_type": {
+									"value": "@activity('Read table details').output.firstRow.load_type",
+									"type": "Expression"
 								}
 							}
 						},
@@ -408,12 +410,142 @@
 								{
 									"type": "Query",
 									"text": {
-										"value": "update ctrl.audit_log\nset status='SUCCEED', end_time=SYSUTCDATETIME(),\nrecords_written=@{activity('Bronze-to-silver').output.runOutput}\nwhere adf_run_id='@{pipeline().parameters.adf_run_id}' and\ntable_id=@{pipeline().parameters.table_id}",
+										"value": "update ctrl.audit_log\nset status='SUCCESS', end_time=SYSUTCDATETIME(),\nrecords_written=@{activity('Bronze-to-silver').output.runOutput}\nwhere adf_run_id='@{pipeline().parameters.adf_run_id}' and\ntable_id=@{pipeline().parameters.table_id}",
 										"type": "Expression"
 									}
 								}
 							],
 							"scriptBlockExecutionTimeout": "02:00:00"
+						}
+					},
+					{
+						"name": "check load type",
+						"type": "IfCondition",
+						"dependsOn": [
+							{
+								"activity": "Read table details",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							},
+							{
+								"activity": "set start time",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"expression": {
+								"value": "@not(equals(activity('Read table details').output.firstRow.load_type,'FULL')) ",
+								"type": "Expression"
+							},
+							"ifTrueActivities": [
+								{
+									"name": "Read watermark",
+									"type": "Lookup",
+									"dependsOn": [],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"source": {
+											"type": "AzureSqlSource",
+											"sqlReaderQuery": {
+												"value": "select watermark_value from ctrl.watermark where table_id=@{pipeline().parameters.table_id}",
+												"type": "Expression"
+											},
+											"queryTimeout": "02:00:00",
+											"partitionOption": "None"
+										},
+										"dataset": {
+											"referenceName": "AzureSqlTable1",
+											"type": "DatasetReference",
+											"parameters": {}
+										}
+									}
+								},
+								{
+									"name": "store watermark value",
+									"type": "SetVariable",
+									"dependsOn": [
+										{
+											"activity": "Read watermark",
+											"dependencyConditions": [
+												"Succeeded"
+											]
+										}
+									],
+									"policy": {
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"variableName": "watermark_value",
+										"value": {
+											"value": "@activity('Read watermark').output.firstRow.watermark_value",
+											"type": "Expression"
+										}
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "check load type and update watermark",
+						"type": "IfCondition",
+						"dependsOn": [
+							{
+								"activity": "Bronze-to-silver",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"expression": {
+								"value": "@not(equals(activity('Read table details').output.firstRow.load_type,'FULL')) ",
+								"type": "Expression"
+							},
+							"ifTrueActivities": [
+								{
+									"name": "update watermark",
+									"type": "Script",
+									"dependsOn": [],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"linkedServiceName": {
+										"referenceName": "LS_AzureSqlDatabase1",
+										"type": "LinkedServiceReference"
+									},
+									"typeProperties": {
+										"scripts": [
+											{
+												"type": "Query",
+												"text": {
+													"value": "update ctrl.watermark\nset watermark_value=SYSUTCDATETIME()\nwhere table_id=@{pipeline().parameters.table_id}",
+													"type": "Expression"
+												}
+											}
+										],
+										"scriptBlockExecutionTimeout": "02:00:00"
+									}
+								}
+							]
 						}
 					}
 				],
@@ -426,11 +558,15 @@
 						"defaultValue": "1"
 					},
 					"adf_run_id": {
-						"type": "string"
+						"type": "string",
+						"defaultValue": "1"
 					}
 				},
 				"variables": {
 					"create_time": {
+						"type": "String"
+					},
+					"watermark_value": {
 						"type": "String"
 					}
 				},
@@ -441,7 +577,8 @@
 				"[concat(variables('factoryId'), '/datasets/DS_PostgreSqlTable1')]",
 				"[concat(variables('factoryId'), '/datasets/DS_ADLS_Parquet1')]",
 				"[concat(variables('factoryId'), '/linkedServices/AzureDatabricks1')]",
-				"[concat(variables('factoryId'), '/linkedServices/LS_AzureSqlDatabase1')]"
+				"[concat(variables('factoryId'), '/linkedServices/LS_AzureSqlDatabase1')]",
+				"[concat(variables('factoryId'), '/datasets/AzureSqlTable1')]"
 			]
 		},
 		{
@@ -606,7 +743,8 @@
 						"defaultValue": "neon_postgres"
 					},
 					"adf_run_id": {
-						"type": "string"
+						"type": "string",
+						"defaultValue": "1"
 					}
 				},
 				"variables": {
