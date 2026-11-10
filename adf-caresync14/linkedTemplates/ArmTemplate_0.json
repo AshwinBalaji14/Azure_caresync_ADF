@@ -493,7 +493,7 @@
 									"userProperties": [],
 									"typeProperties": {
 										"notebookPath": {
-											"value": "/Users/harshithashri2410266@ssn.edu.in/Caresync_AZURE_DATA_BRICKS/Gold/NB_@(item().gold_table_name) ",
+											"value": "@concat(\n    '/Users/harshithashri2410266@ssn.edu.in/Caresync_AZURE_DATA_BRICKS/Gold/NB_',\n    item().gold_table_name\n)",
 											"type": "Expression"
 										}
 									},
@@ -536,6 +536,23 @@
 											}
 										],
 										"scriptBlockExecutionTimeout": "02:00:00"
+									}
+								},
+								{
+									"name": "update pipeline as failed",
+									"type": "Fail",
+									"dependsOn": [
+										{
+											"activity": "Silver to gold",
+											"dependencyConditions": [
+												"Failed"
+											]
+										}
+									],
+									"userProperties": [],
+									"typeProperties": {
+										"message": "inner pipeline failed ",
+										"errorCode": "500"
 									}
 								}
 							]
@@ -1335,6 +1352,23 @@
 											}
 										],
 										"scriptBlockExecutionTimeout": "02:00:00"
+									}
+								},
+								{
+									"name": "update pipeline as failed",
+									"type": "Fail",
+									"dependsOn": [
+										{
+											"activity": "ingest source to silver",
+											"dependencyConditions": [
+												"Failed"
+											]
+										}
+									],
+									"userProperties": [],
+									"typeProperties": {
+										"message": "inner pipeline failed ",
+										"errorCode": "500"
 									}
 								}
 							]
